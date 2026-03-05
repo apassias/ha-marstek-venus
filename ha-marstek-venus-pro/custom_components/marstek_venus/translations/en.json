@@ -1,0 +1,26 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Marstek Venus (Local UDP)",
+        "data": {
+          "scan_mode": "Scan method",
+          "port": "UDP port",
+          "cidr": "Subnet (CIDR)"
+        }
+      },
+      "pick": {
+        "title": "Select devices",
+        "description": "Select detected devices (or enter an IP manually).",
+        "data": {
+          "devices": "Detected devices",
+          "manual_host": "Manual IP"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot connect to device",
+      "no_selection": "Select at least one device or enter a manual IP"
+    }
+  }
+}

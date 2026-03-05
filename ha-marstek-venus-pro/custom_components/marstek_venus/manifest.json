@@ -1,0 +1,13 @@
+{
+  "domain": "marstek_venus",
+  "name": "Marstek Venus (Local UDP)",
+  "version": "1.2.0",
+  "documentation": "https://github.com/apassias/ha-marstek-venus",
+  "issue_tracker": "https://github.com/apassias/ha-marstek-venus/issues",
+  "codeowners": [
+    "@apassias"
+  ],
+  "config_flow": true,
+  "iot_class": "local_polling",
+  "requirements": []
+}

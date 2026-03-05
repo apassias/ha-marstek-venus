@@ -1,0 +1,6 @@
+{
+  "name": "Marstek Venus (Local UDP)",
+  "domain": "marstek_venus",
+  "content_in_root": false,
+  "render_readme": true
+}

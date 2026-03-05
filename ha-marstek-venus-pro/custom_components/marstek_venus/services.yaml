@@ -1,0 +1,55 @@
+set_mode:
+  name: Set mode
+  description: Set work mode (Auto / AI / Manual / Passive).
+  fields:
+    device_id:
+      required: true
+      selector:
+        text:
+    mode:
+      required: true
+      selector:
+        select:
+          options:
+            - Auto
+            - AI
+            - Manual
+            - Passive
+
+set_passive:
+  name: Set Passive mode
+  description: Set Passive mode with a fixed power and cooldown time.
+  fields:
+    device_id:
+      required: true
+      selector:
+        text:
+    power:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 10000
+          step: 1
+          unit_of_measurement: W
+    cd_time:
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 3600
+          step: 1
+          unit_of_measurement: s
+
+set_manual:
+  name: Set Manual schedule
+  description: Set Manual mode schedule (manual_cfg slots).
+  fields:
+    device_id:
+      required: true
+      selector:
+        text:
+    slots:
+      required: true
+      selector:
+        object:
