@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import voluptuous as vol
+
 from homeassistant import config_entries
 from homeassistant.helpers import config_validation as cv
 
@@ -30,6 +32,8 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         self._scan_port = DEFAULT_PORT
         self._scan_cidr = "192.168.1.0/24"
 
+        self._scan_task: asyncio.Task | None = None
+
     async def async_step_init(self, user_input=None):
         if user_input is not None:
             self._scan_mode = user_input[CONF_SCAN_MODE]
@@ -47,14 +51,25 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         return self.async_show_form(step_id="init", data_schema=schema)
 
     async def async_step_scan(self, user_input=None):
-        return self.async_show_progress(step_id="scan", progress_action="scan")
+        """
+        Home Assistant 2024.8+ requires async_show_progress to be called with a progress_task.
+        """
+        if self._scan_task is None:
+            self._scan_task = self.hass.async_create_task(self._async_do_scan())
 
-    async def async_step_scan_progress(self, user_input=None):
+        if not self._scan_task.done():
+            return self.async_show_progress(
+                progress_action="scan",
+                progress_task=self._scan_task,
+            )
+
+        return self.async_show_progress_done(next_step_id="edit")
+
+    async def _async_do_scan(self):
         if self._scan_mode == "broadcast":
             self._discovered = await udp_broadcast_discover(port=self._scan_port, timeout=2.0)
         else:
             self._discovered = await udp_subnet_probe(cidr=self._scan_cidr, port=self._scan_port)
-        return await self.async_step_edit()
 
     async def async_step_edit(self, user_input=None):
         errors = {}
@@ -78,7 +93,14 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 if not d:
                     continue
                 name = d.src or d.host
-                new_devices.append({CONF_HOST: d.host, CONF_PORT: d.port, CONF_NAME: name, CONF_WIFI_MAC: d.wifi_mac})
+                new_devices.append(
+                    {
+                        CONF_HOST: d.host,
+                        CONF_PORT: d.port,
+                        CONF_NAME: name,
+                        CONF_WIFI_MAC: d.wifi_mac,
+                    }
+                )
 
             if manual_host:
                 try:
@@ -89,10 +111,18 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                     await client.async_close()
                     name = bat.get("src") or manual_host
                     wifi_mac = (wifi.get("result") or {}).get("wifi_mac")
-                    new_devices.append({CONF_HOST: manual_host, CONF_PORT: self._scan_port, CONF_NAME: name, CONF_WIFI_MAC: wifi_mac})
+                    new_devices.append(
+                        {
+                            CONF_HOST: manual_host,
+                            CONF_PORT: self._scan_port,
+                            CONF_NAME: name,
+                            CONF_WIFI_MAC: wifi_mac,
+                        }
+                    )
                 except Exception:
                     errors["base"] = "cannot_connect"
 
+            # de-dup
             dedup = {}
             for d in new_devices:
                 dedup[f"{d[CONF_HOST]}:{d[CONF_PORT]}"] = d
@@ -134,7 +164,9 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 vol.Optional("add_devices"): cv.multi_select(discovered_opts),
                 vol.Optional("manual_host"): str,
                 vol.Optional(CONF_POLL_INTERVAL, default=poll_interval): vol.All(int, vol.Range(min=10, max=3600)),
-                vol.Optional(CONF_ENERGY_UNITS_PER_WH, default=energy_units_per_wh): vol.All(float, vol.Range(min=0.1, max=10000.0)),
+                vol.Optional(CONF_ENERGY_UNITS_PER_WH, default=energy_units_per_wh): vol.All(
+                    float, vol.Range(min=0.1, max=10000.0)
+                ),
             }
         )
         return self.async_show_form(step_id="edit", data_schema=schema, errors=errors)

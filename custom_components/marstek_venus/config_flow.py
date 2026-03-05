@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import voluptuous as vol
 
 from homeassistant import config_entries
@@ -18,7 +19,6 @@ from .const import (
     DOMAIN,
 )
 
-
 from .discovery import udp_broadcast_discover, udp_subnet_probe
 
 
@@ -31,11 +31,15 @@ class MarstekVenusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._scan_port = DEFAULT_PORT
         self._scan_cidr = "192.168.1.0/24"
 
+        self._scan_task: asyncio.Task | None = None
+
     async def async_step_user(self, user_input=None):
         if user_input is not None:
             self._scan_mode = user_input[CONF_SCAN_MODE]
             self._scan_port = int(user_input[CONF_PORT])
             self._scan_cidr = user_input.get(CONF_CIDR, self._scan_cidr)
+
+            # Start scan step (progress-aware)
             return await self.async_step_scan()
 
         schema = vol.Schema(
@@ -48,15 +52,27 @@ class MarstekVenusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_show_form(step_id="user", data_schema=schema)
 
     async def async_step_scan(self, user_input=None):
-        return self.async_show_progress(step_id="scan", progress_action="scan")
+        """
+        Home Assistant 2024.8+ requires async_show_progress to be called with a progress_task.
+        We create a scan task once, then show progress until it completes.
+        """
+        if self._scan_task is None:
+            self._scan_task = self.hass.async_create_task(self._async_do_scan())
 
-    async def async_step_scan_progress(self, user_input=None):
+        if not self._scan_task.done():
+            return self.async_show_progress(
+                progress_action="scan",
+                progress_task=self._scan_task,
+            )
+
+        # Done
+        return self.async_show_progress_done(next_step_id="pick")
+
+    async def _async_do_scan(self):
         if self._scan_mode == "broadcast":
             self._discovered = await udp_broadcast_discover(port=self._scan_port, timeout=2.0)
         else:
             self._discovered = await udp_subnet_probe(cidr=self._scan_cidr, port=self._scan_port)
-
-        return await self.async_step_pick()
 
     async def async_step_pick(self, user_input=None):
         errors = {}
@@ -73,7 +89,14 @@ class MarstekVenusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 if not d:
                     continue
                 name = d.src or d.host
-                devices.append({CONF_HOST: d.host, CONF_PORT: d.port, CONF_NAME: name, CONF_WIFI_MAC: d.wifi_mac})
+                devices.append(
+                    {
+                        CONF_HOST: d.host,
+                        CONF_PORT: d.port,
+                        CONF_NAME: name,
+                        CONF_WIFI_MAC: d.wifi_mac,
+                    }
+                )
 
             if manual_host:
                 try:
@@ -85,7 +108,14 @@ class MarstekVenusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
                     name = bat.get("src") or manual_host
                     wifi_mac = (wifi.get("result") or {}).get("wifi_mac")
-                    devices.append({CONF_HOST: manual_host, CONF_PORT: self._scan_port, CONF_NAME: name, CONF_WIFI_MAC: wifi_mac})
+                    devices.append(
+                        {
+                            CONF_HOST: manual_host,
+                            CONF_PORT: self._scan_port,
+                            CONF_NAME: name,
+                            CONF_WIFI_MAC: wifi_mac,
+                        }
+                    )
                 except Exception:
                     errors["base"] = "cannot_connect"
 
@@ -127,4 +157,5 @@ class MarstekVenusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 async def async_get_options_flow(config_entry):
     from .options_flow import OptionsFlowHandler
+
     return OptionsFlowHandler(config_entry)
